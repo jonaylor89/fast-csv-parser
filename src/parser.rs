@@ -1,4 +1,5 @@
 use color_eyre::eyre::{eyre, Result};
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct CsvParserState {
@@ -68,15 +69,32 @@ pub struct CsvParser {
 }
 
 impl CsvParser {
-  pub fn new(options: CsvParserOptions) -> Self {
+  pub fn new(mut options: CsvParserOptions) -> Self {
+    // Set escape to quote if not defined
+    if options.escape == 0 {
+      options.escape = options.quote;
+    }
+
+    let mut state = CsvParserState::new();
+
+    // Handle headers option
+    if options.headers.is_some() || options.headers.is_none() {
+      state.first = false;
+    }
+
+    // If headers is false, enforce strict as false
+    if options.headers.is_none() {
+      options.strict = false;
+    }
+
     Self {
-      state: CsvParserState::new(),
-      headers: options.headers.clone(),
+      state,
       options,
+      headers: None,
     }
   }
 
-  pub fn parse_cell<'a>(&self, buffer: &'a [u8], start: usize, end: usize) -> Result<&'a [u8]> {
+  pub fn parse_cell<'a>(&self, buffer: &'a [u8], start: usize, end: usize) -> Result<String> {
     let mut start = start;
     let mut end = end;
 
@@ -86,37 +104,47 @@ impl CsvParser {
       end -= 1;
     }
 
-    let mut y = start;
     let mut result = Vec::with_capacity(end - start);
+    let mut i = start;
 
-    for i in start..end {
-      // Handle escape characters
+    while i < end {
       if buffer[i] == self.options.escape && i + 1 < end && buffer[i + 1] == self.options.quote {
-        continue;
+        // Skip escape character
+        i += 1;
       }
-
-      if y != i {
-        result.push(buffer[i]);
-      }
-      y += 1;
+      result.push(buffer[i]);
+      i += 1;
     }
 
-    Ok(&buffer[start..y])
+    self.parse_value(&result, 0, result.len())
   }
 
-  pub fn parse_line(&mut self, buffer: &[u8], start: usize, end: usize) -> Result<Vec<String>> {
+  pub fn parse_line(
+    &mut self,
+    buffer: &[u8],
+    start: usize,
+    end: usize,
+  ) -> Result<Option<HashMap<String, String>>> {
     let mut end = end - 1; // trim newline
     if buffer[end - 1] == b'\r' {
       end -= 1;
+    }
+
+    // Handle skip comments
+    if self.should_skip_comment(buffer, start) {
+      return Ok(None);
     }
 
     let mut cells = Vec::new();
     let mut is_quoted = false;
     let mut offset = start;
 
-    // Handle skip comments
-    if self.should_skip_comment(buffer, start) {
-      return Ok(vec![]);
+    // Skip lines if needed
+    if let Some(skip_lines) = self.options.skip_lines {
+      if self.state.line_number < skip_lines as u64 {
+        self.state.line_number += 1;
+        return Ok(None);
+      }
     }
 
     for i in start..end {
@@ -138,16 +166,16 @@ impl CsvParser {
       }
 
       if buffer[i] == self.options.separator && !is_quoted {
-        let cell = self.parse_cell(buffer, offset, i)?;
-        cells.push(String::from_utf8_lossy(cell).into_owned());
+        let value = self.parse_cell(buffer, offset, i)?;
+        cells.push(value);
         offset = i + 1;
       }
     }
 
     // Handle last cell
     if offset < end {
-      let cell = self.parse_cell(buffer, offset, end)?;
-      cells.push(String::from_utf8_lossy(cell).into_owned());
+      let value = self.parse_cell(buffer, offset, end)?;
+      cells.push(value);
     }
 
     // Handle trailing comma
@@ -159,8 +187,8 @@ impl CsvParser {
     if self.state.first {
       self.state.first = false;
       if self.headers.is_none() {
-        self.headers = Some(cells.clone());
-        return Ok(vec![]);
+        self.headers = Some(cells);
+        return Ok(None);
       }
     }
 
@@ -173,18 +201,59 @@ impl CsvParser {
       }
     }
 
-    Ok(cells)
+    Ok(Some(self.write_row(cells)?))
+  }
+
+  fn parse_value(&self, buffer: &[u8], start: usize, end: usize) -> Result<String> {
+    if self.options.raw {
+      Ok(String::from_utf8_lossy(&buffer[start..end]).into_owned())
+    } else {
+      String::from_utf8(buffer[start..end].to_vec())
+        .map_err(|e| eyre!("UTF-8 conversion error: {}", e))
+    }
+  }
+
+  fn write_row(&self, cells: Vec<String>) -> Result<HashMap<String, String>> {
+    let mut row = HashMap::new();
+    let headers = match &self.headers {
+      Some(h) => h,
+      None => return Err(eyre!("No headers defined")),
+    };
+
+    for (index, cell) in cells.into_iter().enumerate() {
+      if let Some(header) = headers.get(index) {
+        if header != "_" {
+          // Skip columns with null header
+          row.insert(header.clone(), cell);
+        }
+      } else {
+        row.insert(format!("_{}", index), cell);
+      }
+    }
+
+    Ok(row)
   }
 
   fn should_skip_comment(&self, buffer: &[u8], start: usize) -> bool {
     match &self.options.skip_comments {
-      Some(SkipComments::Boolean(true)) => buffer[start] == b'#',
-      Some(SkipComments::String(char)) => buffer[start] == char.as_bytes()[0],
+      Some(SkipComments::Boolean(true)) => {
+        let trimmed_start = buffer[start..]
+          .iter()
+          .position(|&x| !x.is_ascii_whitespace())
+          .map_or(start, |pos| start + pos);
+        buffer.get(trimmed_start) == Some(&b'#')
+      }
+      Some(SkipComments::String(char)) => {
+        let trimmed_start = buffer[start..]
+          .iter()
+          .position(|&x| !x.is_ascii_whitespace())
+          .map_or(start, |pos| start + pos);
+        buffer.get(trimmed_start) == Some(&char.as_bytes()[0])
+      }
       _ => false,
     }
   }
 }
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -196,10 +265,16 @@ mod tests {
 
     let input = b"name,age\nJohn,30\nJane,25";
     let result = parser.parse_line(input, 0, 8).unwrap();
-    assert!(result.is_empty()); // First line is headers
+    assert!(result.is_none()); // First line is headers
 
     let result = parser.parse_line(input, 9, 17).unwrap();
-    assert_eq!(result, vec!["John", "30"]);
+    assert_eq!(
+      result.expect("Failed to parse line"),
+      HashMap::from([
+        ("name".to_string(), "John".to_string()),
+        ("age".to_string(), "30".to_string())
+      ])
+    );
   }
 
   #[test]
@@ -209,10 +284,16 @@ mod tests {
 
     let input = b"name,description\n\"John\",\"Software Engineer\"\n\"Jane\",\"Data Scientist\"";
     let result = parser.parse_line(input, 0, 16).unwrap();
-    assert!(result.is_empty());
+    assert!(result.is_none());
 
     let result = parser.parse_line(input, 17, 42).unwrap();
-    assert_eq!(result, vec!["John", "Software Engineer"]);
+    assert_eq!(
+      result.expect("Failed to parse line"),
+      HashMap::from([
+        ("name".to_string(), "John".to_string()),
+        ("description".to_string(), "Software Engineer".to_string())
+      ])
+    );
   }
 
   #[test]
@@ -222,10 +303,13 @@ mod tests {
 
     let input = b"text\n\"Hello \"\"World\"\"\"";
     let result = parser.parse_line(input, 0, 4).unwrap();
-    assert!(result.is_empty());
+    assert!(result.is_none());
 
     let result = parser.parse_line(input, 5, 21).unwrap();
-    assert_eq!(result, vec!["Hello \"World\""]);
+    assert_eq!(
+      result.expect("Failed to parse line"),
+      HashMap::from([("text".to_string(), "Hello \"World\"".to_string())])
+    );
   }
 
   #[test]
@@ -236,10 +320,16 @@ mod tests {
 
     let input = b"name;age\nJohn;30\nJane;25";
     let result = parser.parse_line(input, 0, 8).unwrap();
-    assert!(result.is_empty());
+    assert!(result.is_none());
 
     let result = parser.parse_line(input, 9, 17).unwrap();
-    assert_eq!(result, vec!["John", "30"]);
+    assert_eq!(
+      result.expect("Failed to parse line"),
+      HashMap::from([
+        ("name".to_string(), "John".to_string()),
+        ("age".to_string(), "30".to_string())
+      ])
+    );
   }
 
   #[test]
@@ -250,7 +340,7 @@ mod tests {
 
     let input = b"a,b\n1,2,3";
     let result = parser.parse_line(input, 0, 3).unwrap();
-    assert!(result.is_empty());
+    assert!(result.is_none());
 
     let result = parser.parse_line(input, 4, 9);
     assert!(result.is_err());
@@ -264,13 +354,19 @@ mod tests {
 
     let input = b"a,b\n#comment\n1,2";
     let result = parser.parse_line(input, 0, 3).unwrap();
-    assert!(result.is_empty());
+    assert!(result.is_none());
 
     let result = parser.parse_line(input, 4, 12).unwrap();
-    assert!(result.is_empty());
+    assert!(result.is_none());
 
     let result = parser.parse_line(input, 13, 16).unwrap();
-    assert_eq!(result, vec!["1", "2"]);
+    assert_eq!(
+      result.expect("Failed to parse line"),
+      HashMap::from([
+        ("a".to_string(), "1".to_string()),
+        ("b".to_string(), "2".to_string())
+      ])
+    );
   }
 
   #[test]
@@ -281,10 +377,10 @@ mod tests {
 
     let input = b"a,b\n~comment\n1,2";
     let result = parser.parse_line(input, 0, 3).unwrap();
-    assert!(result.is_empty());
+    assert!(result.is_none());
 
     let result = parser.parse_line(input, 4, 12).unwrap();
-    assert!(result.is_empty());
+    assert!(result.is_none());
   }
 
   #[test]
@@ -294,13 +390,27 @@ mod tests {
 
     let input = b"a,b,c\n,,\n1,,2";
     let result = parser.parse_line(input, 0, 5).unwrap();
-    assert!(result.is_empty());
+    assert!(result.is_none());
 
     let result = parser.parse_line(input, 6, 8).unwrap();
-    assert_eq!(result, vec!["", "", ""]);
+    assert_eq!(
+      result.expect("Failed to parse line"),
+      HashMap::from([
+        ("a".to_string(), "".to_string()),
+        ("b".to_string(), "".to_string()),
+        ("c".to_string(), "".to_string())
+      ])
+    );
 
     let result = parser.parse_line(input, 9, 13).unwrap();
-    assert_eq!(result, vec!["1", "", "2"]);
+    assert_eq!(
+      result.expect("Failed to parse line"),
+      HashMap::from([
+        ("a".to_string(), "1".to_string()),
+        ("b".to_string(), "".to_string()),
+        ("c".to_string(), "2".to_string())
+      ])
+    );
   }
 
   #[test]
@@ -310,10 +420,17 @@ mod tests {
 
     let input = b"a,b,\n1,2,";
     let result = parser.parse_line(input, 0, 5).unwrap();
-    assert!(result.is_empty());
+    assert!(result.is_none());
 
     let result = parser.parse_line(input, 6, 10).unwrap();
-    assert_eq!(result, vec!["1", "2", ""]);
+    assert_eq!(
+      result.expect("Failed to parse line"),
+      HashMap::from([
+        ("a".to_string(), "1".to_string()),
+        ("b".to_string(), "2".to_string()),
+        ("".to_string(), "".to_string())
+      ])
+    );
   }
 
   #[test]
@@ -323,10 +440,16 @@ mod tests {
 
     let input = b"a,b\r\n1,2\r\n";
     let result = parser.parse_line(input, 0, 4).unwrap();
-    assert!(result.is_empty());
+    assert!(result.is_none());
 
     let result = parser.parse_line(input, 5, 9).unwrap();
-    assert_eq!(result, vec!["1", "2"]);
+    assert_eq!(
+      result.expect("Failed to parse line"),
+      HashMap::from([
+        ("a".to_string(), "1".to_string()),
+        ("b".to_string(), "2".to_string())
+      ])
+    );
   }
 
   #[test]
@@ -337,9 +460,21 @@ mod tests {
 
     let input = b"1,2\n3,4";
     let result = parser.parse_line(input, 0, 3).unwrap();
-    assert_eq!(result, vec!["1", "2"]);
+    assert_eq!(
+      result.expect("Failed to parse line"),
+      HashMap::from([
+        ("col1".to_string(), "1".to_string()),
+        ("col2".to_string(), "2".to_string())
+      ])
+    );
 
     let result = parser.parse_line(input, 4, 7).unwrap();
-    assert_eq!(result, vec!["3", "4"]);
+    assert_eq!(
+      result.expect("Failed to parse line"),
+      HashMap::from([
+        ("col1".to_string(), "3".to_string()),
+        ("col2".to_string(), "4".to_string())
+      ])
+    );
   }
 }

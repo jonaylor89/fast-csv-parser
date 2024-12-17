@@ -2,9 +2,10 @@
 
 use napi::{
   bindgen_prelude::{Buffer, Object, Result},
-  Env, Error, JsUnknown, NapiValue, Status, ValueType,
+  Env, Error, JsFunction, JsUnknown, Status, ValueType,
 };
 use parser::{CsvParser as RustCsvParser, CsvParserOptions, SkipComments};
+use std::collections::HashMap;
 
 mod parser;
 
@@ -86,7 +87,7 @@ impl CsvParser {
   }
 
   #[napi]
-  pub fn push(&mut self, chunk: Buffer) -> Result<Vec<ParsedRow>> {
+  pub fn push(&mut self, env: Env, chunk: Buffer) -> Result<Vec<Object>> {
     self.buffer.extend_from_slice(&chunk);
 
     let mut rows = Vec::new();
@@ -95,12 +96,9 @@ impl CsvParser {
 
     for (i, &byte) in self.buffer.iter().enumerate() {
       if byte == self.inner.options.newline {
-        match self.inner.parse_line(&self.buffer, start, i + 1) {
-          Ok(values) if !values.is_empty() => {
-            rows.push(ParsedRow { values });
-          }
-          Ok(_) => {} // Empty result (like headers)
-          Err(e) => return Err(Error::from_reason(e.to_string())),
+        if let Ok(Some(row)) = self.inner.parse_line(&self.buffer, start, i + 1) {
+          let obj = row_to_js_object(&row, &env)?;
+          rows.push(obj);
         }
         start = i + 1;
         last_newline = i + 1;
@@ -116,7 +114,7 @@ impl CsvParser {
   }
 
   #[napi]
-  pub fn finish(&mut self) -> Result<Vec<ParsedRow>> {
+  pub fn finish(&mut self, env: Env, cb: JsFunction) -> Result<Vec<Object>> {
     if self.buffer.is_empty() {
       return Ok(Vec::new());
     }
@@ -128,10 +126,12 @@ impl CsvParser {
 
     self.buffer.clear();
 
-    if result.is_empty() {
-      Ok(Vec::new())
-    } else {
-      Ok(vec![ParsedRow { values: result }])
+    match result {
+      Some(row) => {
+        let obj = row_to_js_object(&row, &env)?;
+        Ok(vec![obj])
+      }
+      None => Ok(Vec::new()),
     }
   }
 
@@ -141,7 +141,13 @@ impl CsvParser {
   }
 
   #[napi]
-  pub fn transform(&mut self, chunk: Buffer, env: Env) -> Result<Vec<Object>> {
+  pub fn transform(
+    &mut self,
+    env: Env,
+    chunk: Buffer,
+    enc: String,
+    cb: JsFunction,
+  ) -> Result<Vec<Object>> {
     self.buffer.extend_from_slice(&chunk);
     let mut rows = Vec::new();
     let mut start = 0;
@@ -149,27 +155,9 @@ impl CsvParser {
 
     for (i, &byte) in self.buffer.iter().enumerate() {
       if byte == self.inner.options.newline {
-        match self.inner.parse_line(&self.buffer, start, i + 1) {
-          Ok(values) if !values.is_empty() => {
-            // Convert row to JavaScript object
-            let mut obj = env.create_object()?;
-            if let Some(headers) = &self.inner.headers {
-              for (idx, value) in values.iter().enumerate() {
-                if idx < headers.len() {
-                  obj.set(&headers[idx], value)?;
-                } else {
-                  obj.set(&format!("_{}", idx), value)?;
-                }
-              }
-            } else {
-              for (idx, value) in values.iter().enumerate() {
-                obj.set(&idx.to_string(), value)?;
-              }
-            }
-            rows.push(obj);
-          }
-          Ok(_) => {} // Headers or empty line
-          Err(e) => return Err(Error::new(Status::GenericFailure, e.to_string())),
+        if let Ok(Some(row)) = self.inner.parse_line(&self.buffer, start, i + 1) {
+          let obj = row_to_js_object(&row, &env)?;
+          rows.push(obj);
         }
         start = i + 1;
         last_newline = i + 1;
@@ -197,24 +185,21 @@ impl CsvParser {
 
     self.buffer.clear();
 
-    if result.is_empty() {
-      Ok(Vec::new())
-    } else {
-      let mut obj = env.create_object()?;
-      if let Some(headers) = &self.inner.headers {
-        for (idx, value) in result.iter().enumerate() {
-          if idx < headers.len() {
-            obj.set(&headers[idx], value)?;
-          } else {
-            obj.set(&format!("_{}", idx), value)?;
-          }
-        }
-      } else {
-        for (idx, value) in result.iter().enumerate() {
-          obj.set(&idx.to_string(), value)?;
-        }
+    match result {
+      Some(row) => {
+        let obj = row_to_js_object(&row, &env)?;
+        Ok(vec![obj])
       }
-      Ok(vec![obj])
+      None => Ok(Vec::new()),
     }
   }
+}
+
+// Helper function to convert HashMap to JS Object
+fn row_to_js_object(row: &HashMap<String, String>, env: &Env) -> Result<Object> {
+  let mut obj = env.create_object()?;
+  for (key, value) in row {
+    obj.set(key, value)?;
+  }
+  Ok(obj)
 }

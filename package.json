@@ -41,7 +41,8 @@
     "prepublishOnly": "napi prepublish -t npm",
     "test": "ava",
     "universal": "napi universal",
-    "version": "napi version"
+    "version": "napi version",
+    "bench": "bin/bench"
   },
   "packageManager": "yarn@4.5.3"
 }
