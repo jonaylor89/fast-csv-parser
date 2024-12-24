@@ -21,8 +21,8 @@ export interface ParsedRow {
 export declare class CsvParser {
   constructor(options?: JsCsvParserOptions | undefined | null)
   push(chunk: Buffer): Array<object>
-  finish(): Array<object>
+  finish(cb: (...args: any[]) => any): Array<object>
   getHeaders(): Array<string> | null
-  transform(chunk: Buffer): Array<object>
+  transform(chunk: Buffer, enc: string, cb: (...args: any[]) => any): Array<object>
   flush(): Array<object>
 }

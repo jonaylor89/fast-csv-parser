@@ -2,6 +2,7 @@
 
 use napi::{
   bindgen_prelude::{Buffer, Object, Result},
+  threadsafe_function::ThreadsafeFunction,
   Env, Error, JsFunction, JsUnknown, Status, ValueType,
 };
 use parser::{CsvParser as RustCsvParser, CsvParserOptions, SkipComments};
@@ -13,6 +14,7 @@ mod parser;
 extern crate napi_derive;
 
 #[napi(object)]
+#[derive(Default)]
 pub struct JsCsvParserOptions {
   pub escape: Option<String>,
   pub quote: Option<String>,
@@ -24,6 +26,8 @@ pub struct JsCsvParserOptions {
   pub headers: Option<Vec<String>>,
   pub skip_comments: Option<JsUnknown>,
   pub skip_lines: Option<i64>,
+  // pub map_headers: Option<JsFunction>,
+  // pub map_values: Option<JsFunction>,
 }
 
 #[napi(object)]
@@ -41,7 +45,7 @@ pub struct CsvParser {
 #[napi]
 impl CsvParser {
   #[napi(constructor)]
-  pub fn new(options: Option<JsCsvParserOptions>) -> Result<Self> {
+  pub fn new(env: Env, options: Option<JsCsvParserOptions>) -> Result<Self> {
     let opts = if let Some(js_opts) = options {
       let skip_comments: Option<SkipComments> = if let Some(skip_comments) = js_opts.skip_comments {
         let value_type = skip_comments.get_type()?;
@@ -64,6 +68,15 @@ impl CsvParser {
         None
       };
 
+      // let map_headers: Option<ThreadsafeFunction<()>> = js_opts.map_headers.map(|f| {
+      //   let func = f.into_threadsafe_function()?;
+      //   func
+      // });
+      // let map_values: Option<TheadsafeFunction<()>> = js_opts.map_values.map(|f| {
+      //   let func = f.into_threadsafe_function()?;
+      //   func
+      // });
+
       CsvParserOptions {
         escape: js_opts.escape.map(|s| s.as_bytes()[0]).unwrap_or(b'"'),
         quote: js_opts.quote.map(|s| s.as_bytes()[0]).unwrap_or(b'"'),
@@ -75,6 +88,8 @@ impl CsvParser {
         headers: js_opts.headers,
         skip_comments,
         skip_lines: js_opts.skip_lines,
+        // map_headers,
+        // map_values,
       }
     } else {
       CsvParserOptions::default()

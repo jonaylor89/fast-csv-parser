@@ -1,4 +1,5 @@
 use color_eyre::eyre::{eyre, Result};
+use napi::threadsafe_function::ThreadsafeFunction;
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -17,7 +18,6 @@ pub enum SkipComments {
   String(String),
 }
 
-#[derive(Debug)]
 pub struct CsvParserOptions {
   pub(crate) escape: u8,
   pub(crate) quote: u8,
@@ -29,6 +29,8 @@ pub struct CsvParserOptions {
   pub(crate) headers: Option<Vec<String>>,
   pub(crate) skip_comments: Option<SkipComments>,
   pub(crate) skip_lines: Option<i64>,
+  // pub(crate) map_headers: Option<ThreadsafeFunction<(String)>>,
+  // pub(crate) map_values: Option<ThreadsafeFunction<(String, usize, String)>>,
 }
 
 impl Default for CsvParserOptions {
@@ -44,6 +46,8 @@ impl Default for CsvParserOptions {
       headers: None,
       skip_comments: None,
       skip_lines: None,
+      // map_headers: None,
+      // map_values: None,
     }
   }
 }
@@ -187,21 +191,39 @@ impl CsvParser {
     if self.state.first {
       self.state.first = false;
       if self.headers.is_none() {
-        self.headers = Some(cells);
+        let mapped_cells = cells;
+        // .into_iter()
+        // .map(|header| self.map_header(header))
+        // .collect::<Result<Vec<_>>>()?;
+        self.headers = Some(mapped_cells);
         return Ok(None);
       }
     }
 
+    let mapped_cells = cells;
+    // .into_iter()
+    // .enumerate()
+    // .map(|(index, value)| {
+    //   let header = self
+    //     .headers
+    //     .as_ref()
+    //     .and_then(|h| h.get(index))
+    //     .map(|h| h.to_string())
+    //     .unwrap_or_else(|| format!("_{}", index));
+    //   self.map_value(header, index, value)
+    // })
+    // .collect::<Result<Vec<_>>>()?;
+
     // Validate row length if strict mode is enabled
     if self.options.strict {
       if let Some(headers) = &self.headers {
-        if cells.len() != headers.len() {
+        if mapped_cells.len() != headers.len() {
           return Err(eyre!("Row length does not match headers"));
         }
       }
     }
 
-    Ok(Some(self.write_row(cells)?))
+    Ok(Some(self.write_row(mapped_cells)?))
   }
 
   fn parse_value(&self, buffer: &[u8], start: usize, end: usize) -> Result<String> {
@@ -253,6 +275,39 @@ impl CsvParser {
       _ => false,
     }
   }
+
+  // fn map_header(&self, header: String) -> napi::Result<String> {
+  //   if let Some(map_fn) = &self.options.map_headers {
+  //     map_fn.call_with_return_value(
+  //       Ok(header),
+  //       ThreadsafeFunctionCallMode::Blocking,
+  //       |value: JsUnknown| {
+  //         println!("{:?}", value);
+  //         Ok(())
+  //       },
+  //     );
+  //     Ok(result)
+  //   } else {
+  //     Ok(header)
+  //   }
+  // }
+
+  // fn map_value(&self, header: String, index: usize, value: String) -> napi::Result<String> {
+  //   if let Some(map_fn) = &self.options.map_values {
+  //     map_fn.call_with_return_value(
+  //       Ok((header, index, value)),
+  //       ThreadsafeFunctionCallMode::Blocking,
+  //       |value: JsUnknown| {
+  //         println!("{:?}", value);
+  //         Ok(())
+  //       },
+  //     );
+
+  //     Ok(status?.unwrap_or(value))
+  //   } else {
+  //     Ok(value)
+  //   }
+  // }
 }
 #[cfg(test)]
 mod tests {
