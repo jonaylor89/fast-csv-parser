@@ -27,3 +27,4 @@ test("skip columns a and c", async (t) => {
   t.false(error, "no err");
   t.snapshot(lines[0], "first row");
   t.is(lines.length, 1, "1 row");
+});

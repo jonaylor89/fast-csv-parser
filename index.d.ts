@@ -11,9 +11,11 @@ export interface JsCsvParserOptions {
   raw?: boolean
   strict?: boolean
   maxRowBytes?: number
-  headers?: Array<string>
+  headers?: unknown
   skipComments?: unknown
   skipLines?: number
+  mapHeaders?: (...args: any[]) => any
+  mapValues?: (...args: any[]) => any
 }
 export interface ParsedRow {
   values: Array<string>

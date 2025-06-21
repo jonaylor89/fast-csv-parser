@@ -26,7 +26,8 @@
   "license": "MIT",
   "devDependencies": {
     "@napi-rs/cli": "^2.18.4",
-    "ava": "^6.0.1"
+    "ava": "^6.0.1",
+    "csv-parser": "^3.2.0"
   },
   "ava": {
     "timeout": "3m"
@@ -44,5 +45,13 @@
     "version": "napi version",
     "bench": "bin/bench"
   },
-  "packageManager": "yarn@4.5.3"
+  "packageManager": "yarn@4.5.3",
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "globby": "^14.1.0",
+    "loud-rejection": "^2.2.0",
+    "strip-ansi": "^6.0.1",
+    "text-table": "^0.2.0",
+    "time-span": "^5.1.0"
+  }
 }

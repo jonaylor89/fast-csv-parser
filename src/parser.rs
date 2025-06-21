@@ -1,5 +1,5 @@
 use color_eyre::eyre::{eyre, Result};
-use napi::threadsafe_function::ThreadsafeFunction;
+// use napi::threadsafe_function::ThreadsafeFunction;
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -26,11 +26,9 @@ pub struct CsvParserOptions {
   pub(crate) raw: bool,
   pub(crate) strict: bool,
   pub(crate) max_row_bytes: i64,
-  pub(crate) headers: Option<Vec<String>>,
+  pub(crate) headers: Option<Vec<String>>, // None = auto-detect, Some(empty) = no headers/numeric, Some(vec) = custom
   pub(crate) skip_comments: Option<SkipComments>,
   pub(crate) skip_lines: Option<i64>,
-  // pub(crate) map_headers: Option<ThreadsafeFunction<(String)>>,
-  // pub(crate) map_values: Option<ThreadsafeFunction<(String, usize, String)>>,
 }
 
 impl Default for CsvParserOptions {
@@ -46,8 +44,6 @@ impl Default for CsvParserOptions {
       headers: None,
       skip_comments: None,
       skip_lines: None,
-      // map_headers: None,
-      // map_values: None,
     }
   }
 }
@@ -82,42 +78,66 @@ impl CsvParser {
     let mut state = CsvParserState::new();
 
     // Handle headers option
-    if options.headers.is_some() || options.headers.is_none() {
-      state.first = false;
+    if let Some(ref headers) = options.headers {
+      if !headers.is_empty() {
+        // Custom headers provided, don't parse first line as headers
+        state.first = false;
+      }
+      // If headers is Some(empty), it means headers: false, so we'll generate numeric headers
     }
 
-    // If headers is false, enforce strict as false
-    if options.headers.is_none() {
-      options.strict = false;
-    }
+    let headers = if let Some(ref option_headers) = options.headers {
+      if !option_headers.is_empty() {
+        // Custom headers provided
+        Some(option_headers.clone())
+      } else {
+        // headers: false - will be set to numeric when first row is encountered
+        None
+      }
+    } else {
+      // headers not specified - will be auto-detected
+      None
+    };
 
     Self {
       state,
       options,
-      headers: None,
+      headers,
     }
   }
 
-  pub fn parse_cell<'a>(&self, buffer: &'a [u8], start: usize, end: usize) -> Result<String> {
-    let mut start = start;
-    let mut end = end;
+  pub fn parse_cell(&self, buffer: &[u8], start: usize, end: usize) -> Result<String> {
+    if start >= end {
+      return Ok(String::new());
+    }
+    
+    let mut cell_start = start;
+    let mut cell_end = end;
+    let mut is_quoted = false;
 
-    // Handle quoted cells
-    if buffer[start] == self.options.quote && buffer[end - 1] == self.options.quote {
-      start += 1;
-      end -= 1;
+    // Check if cell is quoted
+    if buffer[cell_start] == self.options.quote && cell_end > cell_start && buffer[cell_end - 1] == self.options.quote {
+      cell_start += 1;
+      cell_end -= 1;
+      is_quoted = true;
     }
 
-    let mut result = Vec::with_capacity(end - start);
-    let mut i = start;
+    let mut result = if cell_end > cell_start {
+      Vec::with_capacity(cell_end - cell_start)
+    } else {
+      Vec::new()
+    };
+    let mut i = cell_start;
 
-    while i < end {
-      if buffer[i] == self.options.escape && i + 1 < end && buffer[i + 1] == self.options.quote {
-        // Skip escape character
+    while i < cell_end {
+      if is_quoted && buffer[i] == self.options.quote && i + 1 < cell_end && buffer[i + 1] == self.options.quote {
+        // Handle escaped quotes (double quotes)
+        result.push(self.options.quote);
+        i += 2; // Skip both quotes
+      } else {
+        result.push(buffer[i]);
         i += 1;
       }
-      result.push(buffer[i]);
-      i += 1;
     }
 
     self.parse_value(&result, 0, result.len())
@@ -129,9 +149,21 @@ impl CsvParser {
     start: usize,
     end: usize,
   ) -> Result<Option<HashMap<String, String>>> {
-    let mut end = end - 1; // trim newline
-    if buffer[end - 1] == b'\r' {
+    if start >= end {
+      return Ok(None);
+    }
+    
+    let mut end = end;
+    // trim newline
+    if end > start && buffer[end - 1] == self.options.newline {
       end -= 1;
+    }
+    if end > start && buffer[end - 1] == b'\r' {
+      end -= 1;
+    }
+    
+    if start >= end {
+      return Ok(None);
     }
 
     // Handle skip comments
@@ -151,29 +183,34 @@ impl CsvParser {
       }
     }
 
-    for i in start..end {
-      let is_starting_quote = !is_quoted && buffer[i] == self.options.quote;
-      let is_ending_quote = is_quoted
-        && buffer[i] == self.options.quote
-        && i + 1 <= end
-        && buffer[i + 1] == self.options.separator;
-      let is_escape = is_quoted
-        && buffer[i] == self.options.escape
-        && i + 1 < end
-        && buffer[i + 1] == self.options.quote;
+    // Check maxRowBytes (including newline)
+    let row_bytes = end - start;  // This includes the newline character
+    if row_bytes > self.options.max_row_bytes as usize {
+      return Err(eyre!("Row exceeds the maximum size"));
+    }
 
-      if is_starting_quote || is_ending_quote {
-        is_quoted = !is_quoted;
-        continue;
-      } else if is_escape {
-        continue;
-      }
-
-      if buffer[i] == self.options.separator && !is_quoted {
+    let mut i = start;
+    while i < end {
+      let byte = buffer[i];
+      
+      if byte == self.options.quote {
+        if !is_quoted {
+          // Starting quote
+          is_quoted = true;
+        } else if i + 1 < end && buffer[i + 1] == self.options.quote {
+          // Escaped quote - skip both characters
+          i += 1; // Skip the escape quote, will increment again at end of loop
+        } else {
+          // Ending quote
+          is_quoted = false;
+        }
+      } else if byte == self.options.separator && !is_quoted {
         let value = self.parse_cell(buffer, offset, i)?;
         cells.push(value);
         offset = i + 1;
       }
+      
+      i += 1;
     }
 
     // Handle last cell
@@ -183,20 +220,31 @@ impl CsvParser {
     }
 
     // Handle trailing comma
-    if buffer[end - 1] == self.options.separator {
+    if end > start && buffer[end - 1] == self.options.separator {
       cells.push(String::new());
     }
 
     // Handle headers
     if self.state.first {
       self.state.first = false;
-      if self.headers.is_none() {
-        let mapped_cells = cells;
-        // .into_iter()
-        // .map(|header| self.map_header(header))
-        // .collect::<Result<Vec<_>>>()?;
-        self.headers = Some(mapped_cells);
-        return Ok(None);
+      match &self.options.headers {
+        None => {
+          // Auto-detect headers from first row
+          self.headers = Some(cells);
+          self.state.line_number += 1;
+          return Ok(None);
+        }
+        Some(ref headers) if headers.is_empty() => {
+          // headers: false - generate numeric column names based on first row
+          let numeric_headers: Vec<String> = (0..cells.len()).map(|i| i.to_string()).collect();
+          self.headers = Some(numeric_headers);
+          // Don't return early - process this row as data
+        }
+        Some(headers) => {
+          // Use provided custom headers
+          self.headers = Some(headers.clone());
+          // Don't return early - process this row as data
+        }
       }
     }
 
@@ -223,6 +271,7 @@ impl CsvParser {
       }
     }
 
+    self.state.line_number += 1;
     Ok(Some(self.write_row(mapped_cells)?))
   }
 
@@ -242,13 +291,18 @@ impl CsvParser {
       None => return Err(eyre!("No headers defined")),
     };
 
+    // Handle strict mode
+    if self.options.strict && cells.len() != headers.len() {
+      return Err(eyre!("Row length does not match headers"));
+    }
+
     for (index, cell) in cells.into_iter().enumerate() {
       if let Some(header) = headers.get(index) {
-        if header != "_" {
-          // Skip columns with null header
+        if !header.is_empty() && header != "_" {
           row.insert(header.clone(), cell);
         }
-      } else {
+      } else if !self.options.strict {
+        // Only add extra columns if not in strict mode
         row.insert(format!("_{}", index), cell);
       }
     }
