@@ -16,6 +16,7 @@ Streaming CSV parser that aims for maximum speed while maintaining 100% compatib
 🦀 **Rust-powered** native performance
 🌐 **Cross-platform** support (Windows, macOS, Linux, ARM)
 📦 **Zero dependencies** in production
+🔤 **UTF-16 support** - handles UTF-16 LE/BE with BOM detection
 
 ## Performance Comparison
 
@@ -246,6 +247,35 @@ const csvParser = require('fast-csv-parser')
 // Everything else stays the same
 ```
 
+## 🔤 Encoding Support
+
+`fast-csv-parser` automatically detects and handles multiple text encodings:
+
+- **UTF-8** (default) - with automatic BOM stripping
+- **UTF-16 LE** (Little Endian) - with BOM detection
+- **UTF-16 BE** (Big Endian) - with BOM detection
+
+No configuration needed - encoding is detected automatically from Byte Order Marks (BOM):
+
+```js
+const csv = require('fast-csv-parser')
+
+// Works with UTF-8, UTF-16 LE, UTF-16 BE files automatically
+fs.createReadStream('data-utf16.csv')  // UTF-16 file
+  .pipe(csv())
+  .on('data', (row) => console.log(row))
+```
+
+### Encoding Details
+
+| Encoding | BOM | Detection | Status |
+|----------|-----|-----------|--------|
+| UTF-8 | `EF BB BF` | Auto-detected, BOM stripped | ✅ Supported |
+| UTF-16 LE | `FF FE` | Auto-detected | ✅ Supported |
+| UTF-16 BE | `FE FF` | Auto-detected | ✅ Supported |
+| ASCII | None | Treated as UTF-8 | ✅ Supported |
+| Other | - | Not supported | ❌ |
+
 ## 📊 Benchmarks
 
 Run benchmarks yourself:
@@ -275,6 +305,8 @@ Comparing Rust implementation vs Original JavaScript csv-parser
 File                    Original    Rust     Speedup
 large-dataset.csv         59ms      47ms     1.26x ⚡
 option-maxRowBytes.csv    36ms      29ms     1.24x ⚡
+utf16-big.csv            ERROR      0.13ms   ✅ Fixed
+utf16.csv                ERROR      0.11ms   ✅ Fixed
 basic.csv               0.098ms    0.43ms    0.23x
 ```
 
@@ -328,19 +360,24 @@ fast-csv-parser -s $'\t' data.tsv
 fast-csv-parser --separator=';' --quote='"' data.csv
 ```
 
-## 🔤 Encoding & BOM Support
+## 🔤 Advanced Encoding Usage
 
-Handle encoding issues the same way as csv-parser:
+For most cases, encoding is handled automatically. For advanced scenarios:
 
 ```js
 const csv = require('fast-csv-parser')
-const iconv = require('iconv-lite')
-const stripBom = require('strip-bom-stream')
 
-fs.createReadStream('data.csv')
-  .pipe(stripBom())
-  .pipe(iconv.decodeStream('utf8'))
+// Automatic encoding detection (recommended)
+fs.createReadStream('data.csv')  // Any supported encoding
   .pipe(csv())
+  .on('data', (row) => console.log(row))
+
+// For unsupported encodings, use iconv-lite preprocessing
+const iconv = require('iconv-lite')
+fs.createReadStream('latin1-data.csv')
+  .pipe(iconv.decodeStream('latin1'))
+  .pipe(csv())
+  .on('data', (row) => console.log(row))
 ```
 
 ## 🤔 When to Use
@@ -368,7 +405,7 @@ A: Use `fast-csv-parser` when:
 - You're already using csv-parser and want better performance
 
 ### Q: Are there any breaking changes?
-A: **No breaking changes.** The API is 100% compatible. However, UTF-16 files currently throw errors instead of being processed.
+A: **No breaking changes.** The API is 100% compatible. UTF-16 files are now properly supported with automatic encoding detection.
 
 ### Q: Why is it slower on small files?
 A: There's a ~0.1ms overhead from the Node.js ↔ Rust boundary. For tiny files, this overhead exceeds the parsing time. The crossover point is around 1KB.

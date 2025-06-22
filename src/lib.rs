@@ -1,5 +1,6 @@
 #![deny(clippy::all)]
 
+use encoding_rs::{Encoding, UTF_16BE, UTF_16LE, UTF_8};
 use napi::{
   bindgen_prelude::{Buffer, Object, Result},
   Env, Error, JsFunction, JsUnknown, Status, ValueType,
@@ -40,6 +41,9 @@ pub struct CsvParser {
   inner: RustCsvParser,
   buffer: Vec<u8>,
   pending_error: Option<String>,
+  encoding: &'static Encoding,
+  bom_detected: bool,
+  utf8_buffer: Vec<u8>,
 }
 
 #[napi]
@@ -102,7 +106,9 @@ impl CsvParser {
             ValueType::Object => {
               // Assume it's an array
               let js_array: napi::JsObject = unsafe { headers_val.cast() };
-              let length: u32 = js_array.get_named_property::<napi::JsNumber>("length")?.get_uint32()?;
+              let length: u32 = js_array
+                .get_named_property::<napi::JsNumber>("length")?
+                .get_uint32()?;
               let mut headers = Vec::new();
               for i in 0..length {
                 let element: napi::JsString = js_array.get_element(i)?;
@@ -127,6 +133,9 @@ impl CsvParser {
       inner: RustCsvParser::new(opts),
       buffer: Vec::new(),
       pending_error: None,
+      encoding: UTF_8,
+      bom_detected: false,
+      utf8_buffer: Vec::new(),
     })
   }
 
@@ -139,19 +148,30 @@ impl CsvParser {
 
     self.buffer.extend_from_slice(&chunk);
 
+    // Detect encoding from BOM if this is the first chunk
+    if !self.bom_detected && self.buffer.len() >= 2 {
+      self.detect_encoding();
+      self.bom_detected = true;
+    }
+
+    // Convert to UTF-8 and accumulate in utf8_buffer
+    self.process_encoding()?;
+
     let mut rows = Vec::new();
     let mut start = 0;
     let mut last_newline = 0;
 
     let mut is_quoted = false;
     let mut i = 0;
-    while i < self.buffer.len() {
-      let byte = self.buffer[i];
+    while i < self.utf8_buffer.len() {
+      let byte = self.utf8_buffer[i];
       // Track quote state to avoid treating quoted newlines as row separators
       if byte == self.inner.options.quote {
         if !is_quoted {
           is_quoted = true;
-        } else if i + 1 < self.buffer.len() && self.buffer[i + 1] == self.inner.options.quote {
+        } else if i + 1 < self.utf8_buffer.len()
+          && self.utf8_buffer[i + 1] == self.inner.options.quote
+        {
           // Skip escaped quote - advance past both quote characters
           i += 2;
           continue;
@@ -159,9 +179,9 @@ impl CsvParser {
           is_quoted = false;
         }
       }
-      
+
       if byte == self.inner.options.newline && !is_quoted {
-        match self.inner.parse_line(&self.buffer, start, i + 1) {
+        match self.inner.parse_line(&self.utf8_buffer, start, i + 1) {
           Ok(Some(row)) => {
             let obj = row_to_js_object_ordered(&row, &self.inner.headers, &env)?;
             rows.push(obj);
@@ -174,7 +194,7 @@ impl CsvParser {
           Err(e) => {
             // Remove processed data up to this point
             if last_newline > 0 {
-              self.buffer = self.buffer[last_newline..].to_vec();
+              self.utf8_buffer = self.utf8_buffer[last_newline..].to_vec();
             }
             // If we have valid rows, store the error for next call and return the rows
             if !rows.is_empty() {
@@ -189,9 +209,9 @@ impl CsvParser {
       i += 1;
     }
 
-    // Remove processed data from buffer
+    // Remove processed data from utf8_buffer
     if last_newline > 0 {
-      self.buffer = self.buffer[last_newline..].to_vec();
+      self.utf8_buffer = self.utf8_buffer[last_newline..].to_vec();
     }
 
     Ok(rows)
@@ -199,16 +219,30 @@ impl CsvParser {
 
   #[napi]
   pub fn finish(&mut self, env: Env, _cb: JsFunction) -> Result<Vec<Object>> {
-    if self.buffer.is_empty() {
+    if self.buffer.is_empty() && self.utf8_buffer.is_empty() {
+      return Ok(Vec::new());
+    }
+
+    // Detect encoding if not already done
+    if !self.bom_detected && self.buffer.len() >= 2 {
+      self.detect_encoding();
+      self.bom_detected = true;
+    }
+
+    // Process any remaining bytes in buffer
+    self.process_encoding()?;
+
+    if self.utf8_buffer.is_empty() {
       return Ok(Vec::new());
     }
 
     let result = self
       .inner
-      .parse_line(&self.buffer, 0, self.buffer.len())
+      .parse_line(&self.utf8_buffer, 0, self.utf8_buffer.len())
       .map_err(|e| Error::from_reason(e.to_string()))?;
 
     self.buffer.clear();
+    self.utf8_buffer.clear();
 
     match result {
       Some(row) => {
@@ -271,16 +305,30 @@ impl CsvParser {
       return Err(Error::from_reason(error_msg));
     }
 
-    if self.buffer.is_empty() {
+    if self.buffer.is_empty() && self.utf8_buffer.is_empty() {
+      return Ok(Vec::new());
+    }
+
+    // Detect encoding if not already done
+    if !self.bom_detected && self.buffer.len() >= 2 {
+      self.detect_encoding();
+      self.bom_detected = true;
+    }
+
+    // Process any remaining bytes in buffer
+    self.process_encoding()?;
+
+    if self.utf8_buffer.is_empty() {
       return Ok(Vec::new());
     }
 
     let result = self
       .inner
-      .parse_line(&self.buffer, 0, self.buffer.len())
+      .parse_line(&self.utf8_buffer, 0, self.utf8_buffer.len())
       .map_err(|e| Error::new(Status::GenericFailure, e.to_string()))?;
 
     self.buffer.clear();
+    self.utf8_buffer.clear();
 
     match result {
       Some(row) => {
@@ -290,22 +338,70 @@ impl CsvParser {
       None => Ok(Vec::new()),
     }
   }
-}
 
-// Helper function to convert HashMap to JS Object
-fn row_to_js_object(row: &HashMap<String, String>, env: &Env) -> Result<Object> {
-  let mut obj = env.create_object()?;
-  for (key, value) in row {
-    obj.set(key, value)?;
+  fn detect_encoding(&mut self) {
+    if self.buffer.len() >= 2 {
+      // Check for UTF-16 BOM
+      if self.buffer[0] == 0xFF && self.buffer[1] == 0xFE {
+        self.encoding = UTF_16LE;
+      } else if self.buffer[0] == 0xFE && self.buffer[1] == 0xFF {
+        self.encoding = UTF_16BE;
+      }
+      // Check for UTF-8 BOM and strip it
+      else if self.buffer.len() >= 3
+        && self.buffer[0] == 0xEF
+        && self.buffer[1] == 0xBB
+        && self.buffer[2] == 0xBF
+      {
+        // Remove UTF-8 BOM from buffer
+        self.buffer = self.buffer[3..].to_vec();
+      }
+    }
   }
-  Ok(obj)
+
+  fn process_encoding(&mut self) -> Result<()> {
+    if self.encoding == UTF_8 {
+      // For UTF-8, just append to utf8_buffer
+      self.utf8_buffer.extend_from_slice(&self.buffer);
+      self.buffer.clear();
+    } else {
+      // For UTF-16, we need to process complete character pairs
+      let bytes_to_process = if self.encoding == UTF_16LE || self.encoding == UTF_16BE {
+        // UTF-16 characters are 2 bytes each
+        // Keep complete pairs only, save incomplete bytes for next chunk
+        (self.buffer.len() / 2) * 2
+      } else {
+        self.buffer.len()
+      };
+
+      if bytes_to_process > 0 {
+        let (decoded, _, had_errors) = self.encoding.decode(&self.buffer[..bytes_to_process]);
+
+        if had_errors {
+          return Err(Error::from_reason(
+            "Encoding conversion error: invalid characters found",
+          ));
+        }
+
+        self.utf8_buffer.extend_from_slice(decoded.as_bytes());
+
+        // Remove processed bytes, keep any incomplete UTF-16 characters
+        self.buffer = self.buffer[bytes_to_process..].to_vec();
+      }
+    }
+    Ok(())
+  }
 }
 
 // Helper function to convert HashMap to JS Object with ordered properties
-fn row_to_js_object_ordered(row: &HashMap<String, String>, headers: &Option<Vec<String>>, env: &Env) -> Result<Object> {
+fn row_to_js_object_ordered(
+  row: &HashMap<String, String>,
+  headers: &Option<Vec<String>>,
+  env: &Env,
+) -> Result<Object> {
   let mut obj = env.create_object()?;
   let mut added_keys = std::collections::HashSet::new();
-  
+
   if let Some(header_vec) = headers {
     // Add properties in header order first
     for header in header_vec {
@@ -314,7 +410,7 @@ fn row_to_js_object_ordered(row: &HashMap<String, String>, headers: &Option<Vec<
         added_keys.insert(header.clone());
       }
     }
-    
+
     // Add any remaining properties that weren't in headers (like _3, _4, etc.)
     for (key, value) in row {
       if !added_keys.contains(key) {
@@ -327,6 +423,6 @@ fn row_to_js_object_ordered(row: &HashMap<String, String>, headers: &Option<Vec<
       obj.set(key, value)?;
     }
   }
-  
+
   Ok(obj)
 }
