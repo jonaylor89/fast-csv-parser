@@ -1,6 +1,6 @@
 # fast-csv-parser
 
-[![CI](https://github.com/jonaylr89/fast-csv-parser/workflows/CI/badge.svg)](https://github.com/jonaylor89/fast-csv-parser/actions)
+[![CI](https://github.com/jonaylor89/fast-csv-parser/workflows/CI/badge.svg)](https://github.com/jonaylor89/fast-csv-parser/actions)
 [![npm version](https://badge.fury.io/js/fast-csv-parser.svg)](https://badge.fury.io/js/fast-csv-parser)
 [![Downloads](https://img.shields.io/npm/dm/fast-csv-parser.svg)](https://www.npmjs.com/package/fast-csv-parser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
