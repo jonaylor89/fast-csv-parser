@@ -305,8 +305,6 @@ Comparing Rust implementation vs Original JavaScript csv-parser
 File                    Original    Rust     Speedup
 large-dataset.csv         59ms      47ms     1.26x ⚡
 option-maxRowBytes.csv    36ms      29ms     1.24x ⚡
-utf16-big.csv            ERROR      0.13ms   ✅ Fixed
-utf16.csv                ERROR      0.11ms   ✅ Fixed
 basic.csv               0.098ms    0.43ms    0.23x
 ```
 
