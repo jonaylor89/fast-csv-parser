@@ -1,6 +1,9 @@
 {
   "name": "fast-csv-parser-darwin-x64",
   "version": "0.0.3",
+  "repository": {
+    "url": "https://github.com/jonaylor89/fast-csv-parser"
+  },
   "os": [
     "darwin"
   ],

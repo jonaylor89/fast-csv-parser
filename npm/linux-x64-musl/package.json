@@ -1,6 +1,9 @@
 {
   "name": "fast-csv-parser-linux-x64-musl",
   "version": "0.0.3",
+  "repository": {
+    "url": "https://github.com/jonaylor89/fast-csv-parser"
+  },
   "os": [
     "linux"
   ],
