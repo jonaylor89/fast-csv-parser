@@ -395,38 +395,38 @@ jobs:
             set -e
             npm test
             ls -la
-  universal-macOS:
-    name: Build universal macOS binary
-    needs:
-      - build
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Download macOS x64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: bindings-x86_64-apple-darwin
-          path: artifacts
-      - name: Download macOS arm64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: bindings-aarch64-apple-darwin
-          path: artifacts
-      - name: Combine binaries
-        run: npm run universal
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: bindings-universal-apple-darwin
-          path: ${{ env.APP_NAME }}.*.node
-          if-no-files-found: error
+  # universal-macOS:
+  #   name: Build universal macOS binary
+  #   needs:
+  #     - build
+  #   runs-on: macos-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Setup node
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: npm
+  #     - name: Install dependencies
+  #       run: npm ci
+  #     - name: Download macOS x64 artifact
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: bindings-x86_64-apple-darwin
+  #         path: artifacts
+  #     - name: Download macOS arm64 artifact
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: bindings-aarch64-apple-darwin
+  #         path: artifacts
+  #     - name: Combine binaries
+  #       run: npm run universal
+  #     - name: Upload artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: bindings-universal-apple-darwin
+  #         path: ${{ env.APP_NAME }}.*.node
+  #         if-no-files-found: error
   publish:
     name: Publish
     runs-on: ubuntu-latest
@@ -437,7 +437,7 @@ jobs:
       - test-linux-aarch64-gnu-binding
       - test-linux-aarch64-musl-binding
       - test-linux-arm-gnueabihf-binding
-      - universal-macOS
+      # - universal-macOS
     steps:
       - uses: actions/checkout@v4
       - name: Setup node
