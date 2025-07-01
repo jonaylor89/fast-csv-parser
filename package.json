@@ -45,7 +45,7 @@
     "version": "napi version",
     "bench": "bin/bench"
   },
-  "packageManager": "yarn@4.9.2",
+  "packageManager": "npm@11.3.0",
   "dependencies": {
     "chalk": "^4.1.2",
     "globby": "^14.1.0",
