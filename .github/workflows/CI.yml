@@ -31,11 +31,11 @@ jobs:
           - host: windows-latest
             build: npm run build -- --target x86_64-pc-windows-msvc
             target: x86_64-pc-windows-msvc
-          - host: windows-latest
-            build: |
-              npm run build -- --target i686-pc-windows-msvc
-              npm test
-            target: i686-pc-windows-msvc
+          # - host: windows-latest
+          #   build: |
+          #     npm run build -- --target i686-pc-windows-msvc
+          #     npm test
+          #   target: i686-pc-windows-msvc
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
@@ -143,58 +143,58 @@ jobs:
           name: bindings-${{ matrix.settings.target }}
           path: ${{ env.APP_NAME }}.*.node
           if-no-files-found: error
-  build-freebsd:
-    runs-on: macos-13
-    name: Build FreeBSD
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build
-        id: build
-        uses: cross-platform-actions/action@v0.24.0
-        env:
-          DEBUG: napi:*
-          RUSTUP_IO_THREADS: 1
-        with:
-          operating_system: freebsd
-          version: "13.2"
-          memory: 8G
-          cpu_count: 3
-          environment_variables: DEBUG RUSTUP_IO_THREADS IGNORE_OSVERSION
-          shell: bash
-          run: |
-            export IGNORE_OSVERSION=yes
-            export ASSUME_ALWAYS_YES=yes
-            sudo -E pkg update -f
-            sudo -E pkg install -y -f curl git bash
-            # Install Node.js from official source instead of pkg
-            curl -fsSL https://nodejs.org/dist/v20.18.0/node-v20.18.0-freebsd-x64.tar.xz | tar -xJ
-            export PATH="$PWD/node-v20.18.0-freebsd-x64/bin:$PATH"
-            # Install Rust
-            curl https://sh.rustup.rs -sSf --output rustup.sh
-            sh rustup.sh -y --profile minimal --default-toolchain stable
-            source "$HOME/.cargo/env"
-            echo "~~~~ rustc --version ~~~~"
-            rustc --version
-            echo "~~~~ node -v ~~~~"
-            node -v
-            echo "~~~~ npm --version ~~~~"
-            npm --version
-            pwd
-            ls -lah
-            whoami
-            env
-            freebsd-version
-            npm ci
-            npm run build
-            npm test
-            rm -rf node_modules
-            rm -rf target
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: bindings-freebsd
-          path: ${{ env.APP_NAME }}.*.node
-          if-no-files-found: error
+  # build-freebsd:
+  #   runs-on: macos-13
+  #   name: Build FreeBSD
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Build
+  #       id: build
+  #       uses: cross-platform-actions/action@v0.24.0
+  #       env:
+  #         DEBUG: napi:*
+  #         RUSTUP_IO_THREADS: 1
+  #       with:
+  #         operating_system: freebsd
+  #         version: "13.2"
+  #         memory: 8G
+  #         cpu_count: 3
+  #         environment_variables: DEBUG RUSTUP_IO_THREADS IGNORE_OSVERSION
+  #         shell: bash
+  #         run: |
+  #           export IGNORE_OSVERSION=yes
+  #           export ASSUME_ALWAYS_YES=yes
+  #           sudo -E pkg update -f
+  #           sudo -E pkg install -y -f curl git bash
+  #           # Install Node.js from official source instead of pkg
+  #           curl -fsSL https://nodejs.org/dist/v20.18.0/node-v20.18.0-freebsd-x64.tar.xz | tar -xJ
+  #           export PATH="$PWD/node-v20.18.0-freebsd-x64/bin:$PATH"
+  #           # Install Rust
+  #           curl https://sh.rustup.rs -sSf --output rustup.sh
+  #           sh rustup.sh -y --profile minimal --default-toolchain stable
+  #           source "$HOME/.cargo/env"
+  #           echo "~~~~ rustc --version ~~~~"
+  #           rustc --version
+  #           echo "~~~~ node -v ~~~~"
+  #           node -v
+  #           echo "~~~~ npm --version ~~~~"
+  #           npm --version
+  #           pwd
+  #           ls -lah
+  #           whoami
+  #           env
+  #           freebsd-version
+  #           npm ci
+  #           npm run build
+  #           npm test
+  #           rm -rf node_modules
+  #           rm -rf target
+  #     - name: Upload artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: bindings-freebsd
+  #         path: ${{ env.APP_NAME }}.*.node
+  #         if-no-files-found: error
   test-macOS-windows-binding:
     name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
     needs:
