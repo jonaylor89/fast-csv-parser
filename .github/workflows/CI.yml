@@ -116,10 +116,7 @@ jobs:
         run: ${{ matrix.settings.setup }}
         if: ${{ matrix.settings.setup }}
         shell: bash
-      - name: Setup node x86
-        if: matrix.settings.target == 'i686-pc-windows-msvc'
-        run: npm config set target_arch ia32
-        shell: bash
+
       - name: Install dependencies
         run: npm ci
       - name: Setup node x86
@@ -165,7 +162,12 @@ jobs:
           environment_variables: DEBUG RUSTUP_IO_THREADS
           shell: bash
           run: |
-            sudo pkg install -y -f curl node libnghttp2 npm
+            sudo pkg update -f
+            sudo pkg install -y -f curl git bash
+            # Install Node.js from official source instead of pkg
+            curl -fsSL https://nodejs.org/dist/v20.18.0/node-v20.18.0-freebsd-x64.tar.xz | tar -xJ
+            export PATH="$PWD/node-v20.18.0-freebsd-x64/bin:$PATH"
+            # Install Rust
             curl https://sh.rustup.rs -sSf --output rustup.sh
             sh rustup.sh -y --profile minimal --default-toolchain stable
             source "$HOME/.cargo/env"
