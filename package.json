@@ -1,6 +1,6 @@
 {
   "name": "fast-csv-parser",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "main": "index.js",
   "types": "index.d.ts",
   "napi": {
@@ -16,7 +16,6 @@
         "armv7-unknown-linux-musleabihf",
         "x86_64-unknown-linux-musl",
         "armv7-linux-androideabi",
-        "universal-apple-darwin",
         "riscv64gc-unknown-linux-gnu"
       ]
     }
@@ -57,17 +56,16 @@
     "time-span": "^5.1.0"
   },
   "optionalDependencies": {
-    "fast-csv-parser-android-arm-eabi": "0.0.2",
-    "fast-csv-parser-android-arm64": "0.0.2",
-    "fast-csv-parser-darwin-arm64": "0.0.2",
-    "fast-csv-parser-darwin-universal": "0.0.2",
-    "fast-csv-parser-linux-arm-gnueabihf": "0.0.2",
-    "fast-csv-parser-linux-arm-musleabihf": "0.0.2",
-    "fast-csv-parser-linux-arm64-gnu": "0.0.2",
-    "fast-csv-parser-linux-arm64-musl": "0.0.2",
-    "fast-csv-parser-linux-riscv64-gnu": "0.0.2",
-    "fast-csv-parser-linux-x64-gnu": "0.0.2",
-    "fast-csv-parser-linux-x64-musl": "0.0.2",
-    "fast-csv-parser-win32-arm64-msvc": "0.0.2"
+    "fast-csv-parser-android-arm-eabi": "0.0.3",
+    "fast-csv-parser-android-arm64": "0.0.3",
+    "fast-csv-parser-darwin-arm64": "0.0.3",
+    "fast-csv-parser-linux-arm-gnueabihf": "0.0.3",
+    "fast-csv-parser-linux-arm-musleabihf": "0.0.3",
+    "fast-csv-parser-linux-arm64-gnu": "0.0.3",
+    "fast-csv-parser-linux-arm64-musl": "0.0.3",
+    "fast-csv-parser-linux-riscv64-gnu": "0.0.3",
+    "fast-csv-parser-linux-x64-gnu": "0.0.3",
+    "fast-csv-parser-linux-x64-musl": "0.0.3",
+    "fast-csv-parser-win32-arm64-msvc": "0.0.3"
   }
 }
