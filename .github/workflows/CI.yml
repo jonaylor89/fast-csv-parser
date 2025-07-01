@@ -159,11 +159,13 @@ jobs:
           version: "13.2"
           memory: 8G
           cpu_count: 3
-          environment_variables: DEBUG RUSTUP_IO_THREADS
+          environment_variables: DEBUG RUSTUP_IO_THREADS IGNORE_OSVERSION
           shell: bash
           run: |
-            sudo pkg update -f
-            sudo pkg install -y -f curl git bash
+            export IGNORE_OSVERSION=yes
+            export ASSUME_ALWAYS_YES=yes
+            sudo -E pkg update -f
+            sudo -E pkg install -y -f curl git bash
             # Install Node.js from official source instead of pkg
             curl -fsSL https://nodejs.org/dist/v20.18.0/node-v20.18.0-freebsd-x64.tar.xz | tar -xJ
             export PATH="$PWD/node-v20.18.0-freebsd-x64/bin:$PATH"
