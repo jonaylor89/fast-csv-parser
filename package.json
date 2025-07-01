@@ -3,6 +3,9 @@
   "version": "0.0.3",
   "main": "index.js",
   "types": "index.d.ts",
+  "repository": {
+    "url": "https://github.com/jonaylor89/fast-csv-parser"
+  },
   "napi": {
     "name": "fast-csv-parser",
     "triples": {
