@@ -72,21 +72,12 @@ impl CsvParser {
         None
       };
 
-      // let map_headers: Option<ThreadsafeFunction<()>> = js_opts.map_headers.map(|f| {
-      //   let func = f.into_threadsafe_function()?;
-      //   func
-      // });
-      // let map_values: Option<TheadsafeFunction<()>> = js_opts.map_values.map(|f| {
-      //   let func = f.into_threadsafe_function()?;
-      //   func
-      // });
-
       CsvParserOptions {
         escape: js_opts.escape.map(|s| s.as_bytes()[0]).unwrap_or(b'"'),
         quote: js_opts.quote.map(|s| s.as_bytes()[0]).unwrap_or(b'"'),
         separator: js_opts.separator.map(|s| s.as_bytes()[0]).unwrap_or(b','),
         newline: js_opts.newline.map(|s| s.as_bytes()[0]).unwrap_or(b'\n'),
-        raw: js_opts.raw.unwrap_or(false),
+        _raw: js_opts.raw.unwrap_or(false),
         strict: js_opts.strict.unwrap_or(false),
         max_row_bytes: js_opts.max_row_bytes.unwrap_or(i64::MAX),
         headers: if let Some(headers_val) = js_opts.headers {
@@ -161,18 +152,31 @@ impl CsvParser {
     let mut start = 0;
     let mut last_newline = 0;
 
+    // Find complete lines in the buffer
     let mut is_quoted = false;
     let mut i = 0;
     while i < self.utf8_buffer.len() {
       let byte = self.utf8_buffer[i];
+
+      // Handle escape characters first
+      if byte == self.inner.options.escape && is_quoted && i + 1 < self.utf8_buffer.len() {
+        let next_byte = self.utf8_buffer[i + 1];
+        if next_byte == self.inner.options.quote {
+          // Skip escaped quote - advance past both characters
+          i += 2;
+          continue;
+        }
+      }
+
       // Track quote state to avoid treating quoted newlines as row separators
       if byte == self.inner.options.quote {
         if !is_quoted {
           is_quoted = true;
-        } else if i + 1 < self.utf8_buffer.len()
+        } else if self.inner.options.escape == self.inner.options.quote
+          && i + 1 < self.utf8_buffer.len()
           && self.utf8_buffer[i + 1] == self.inner.options.quote
         {
-          // Skip escaped quote - advance past both quote characters
+          // Standard CSV escaping: double quotes - advance past both quote characters
           i += 2;
           continue;
         } else {
@@ -181,15 +185,19 @@ impl CsvParser {
       }
 
       if byte == self.inner.options.newline && !is_quoted {
-        match self.inner.parse_line(&self.utf8_buffer, start, i + 1) {
+        // We have a complete line
+        let line_end = i + 1;
+
+        // Try to parse this line using the csv parser
+        match self.inner.parse_line(&self.utf8_buffer, start, line_end) {
           Ok(Some(row)) => {
             let obj = row_to_js_object_ordered(&row, &self.inner.headers, &env)?;
             rows.push(obj);
-            last_newline = i + 1;
+            last_newline = line_end;
           }
           Ok(None) => {
             // No row to process (e.g., header line or comment)
-            last_newline = i + 1;
+            last_newline = line_end;
           }
           Err(e) => {
             // Remove processed data up to this point
@@ -204,7 +212,7 @@ impl CsvParser {
             return Err(Error::from_reason(e.to_string()));
           }
         }
-        start = i + 1;
+        start = line_end;
       }
       i += 1;
     }
@@ -236,6 +244,7 @@ impl CsvParser {
       return Ok(Vec::new());
     }
 
+    // Process any remaining data as a final line
     let result = self
       .inner
       .parse_line(&self.utf8_buffer, 0, self.utf8_buffer.len())
@@ -271,9 +280,13 @@ impl CsvParser {
     let mut start = 0;
     let mut last_newline = 0;
 
+    // Find complete lines in the buffer
     for (i, &byte) in self.buffer.iter().enumerate() {
       if byte == self.inner.options.newline {
-        match self.inner.parse_line(&self.buffer, start, i + 1) {
+        let line_end = i + 1;
+
+        // Try to parse this line using the csv parser
+        match self.inner.parse_line(&self.buffer, start, line_end) {
           Ok(Some(row)) => {
             let obj = row_to_js_object_ordered(&row, &self.inner.headers, &env)?;
             rows.push(obj);
@@ -285,8 +298,8 @@ impl CsvParser {
             return Err(Error::from_reason(e.to_string()));
           }
         }
-        start = i + 1;
-        last_newline = i + 1;
+        start = line_end;
+        last_newline = line_end;
       }
     }
 
@@ -322,6 +335,7 @@ impl CsvParser {
       return Ok(Vec::new());
     }
 
+    // Process any remaining data as a final line
     let result = self
       .inner
       .parse_line(&self.utf8_buffer, 0, self.utf8_buffer.len())
