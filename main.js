@@ -60,6 +60,10 @@ class CsvParserStream extends Transform {
 
   _transform(chunk, encoding, callback) {
     try {
+      // Ensure chunk is a Buffer
+      if (typeof chunk === "string") {
+        chunk = Buffer.from(chunk, encoding || "utf8");
+      }
       const rows = this.parser.push(chunk);
       this._processRows(rows);
       callback();

@@ -451,16 +451,16 @@ fast-csv-parser/
 ├── __test__/           # Test files and fixtures
 ├── examples/           # Usage examples
 ├── bin/                # CLI tools
-├── csv-parser.js       # JavaScript wrapper/compatibility layer
-└── index.js           # Platform-specific native binding loader
+├── main.js             # Main entry point with Stream API
+└── index.js           # Auto-generated native binding loader (build-safe)
 ```
 
 ### Architecture
 
 1. **Rust Core** (`src/parser.rs`) - High-performance CSV parsing
 2. **N-API Bridge** (`src/lib.rs`) - Node.js ↔ Rust interface
-3. **JS Wrapper** (`csv-parser.js`) - API compatibility layer
-4. **Native Loader** (`index.js`) - Cross-platform binary loading
+3. **Native Loader** (`index.js`) - Auto-generated cross-platform binary loading
+4. **Main Entry** (`main.js`) - Stream API compatibility layer (build-safe)
 
 ## 🤝 Contributing
 

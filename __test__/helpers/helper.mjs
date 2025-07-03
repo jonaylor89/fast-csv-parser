@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import csv from "../../csv-parser.js";
+import csv from "../../main.js";
 import { fileURLToPath } from "url";
 
 // Create __dirname equivalent for ES modules

@@ -9,7 +9,7 @@ const table = require("text-table");
 const timeSpan = require("time-span").default;
 const strip = require("strip-ansi");
 
-const csv = require("../csv-parser.js");
+const csv = require("../main.js");
 
 const run = async () => {
   const paths =

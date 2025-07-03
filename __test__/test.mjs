@@ -1,6 +1,6 @@
 import test from "ava";
 import { collect } from "./helpers/helper.mjs";
-import csv from "../csv-parser.js";
+import csv from "../main.js";
 import { Buffer } from "buffer";
 
 const eol = "\n";

@@ -9,11 +9,12 @@ const timeSpan = require("time-span").default;
 const strip = require("strip-ansi");
 
 // Import both parsers
-const fastCsv = require("./csv-parser.js");
+const fastCsv = require("./main.js");
 const originalCsv = require("csv-parser");
 
 const runBenchmark = async (csvParser, parserName) => {
-  const paths = process.argv[2] || (await globby(["__test__/fixtures/**/*.csv"]));
+  const paths =
+    process.argv[2] || (await globby(["__test__/fixtures/**/*.csv"]));
   const rows = [];
 
   console.log(`\n🔥 Running ${parserName} benchmark...\n`);
@@ -74,18 +75,32 @@ const compareResults = (fastResults, originalResults) => {
 
   const comparisons = [];
 
-  for (let i = 0; i < Math.min(fastResults.length, originalResults.length); i++) {
+  for (
+    let i = 0;
+    i < Math.min(fastResults.length, originalResults.length);
+    i++
+  ) {
     const fastRow = fastResults[i];
     const originalRow = originalResults[i];
 
-    if (fastRow && originalRow && fastRow.length >= 4 && originalRow.length >= 4) {
+    if (
+      fastRow &&
+      originalRow &&
+      fastRow.length >= 4 &&
+      originalRow.length >= 4
+    ) {
       const fileName = strip(fastRow[1]);
-      const fastDuration = parseFloat(strip(fastRow[3]).replace('ms', ''));
-      const originalDuration = parseFloat(strip(originalRow[3]).replace('ms', ''));
+      const fastDuration = parseFloat(strip(fastRow[3]).replace("ms", ""));
+      const originalDuration = parseFloat(
+        strip(originalRow[3]).replace("ms", ""),
+      );
 
       if (!isNaN(fastDuration) && !isNaN(originalDuration)) {
         const speedup = (originalDuration / fastDuration).toFixed(2);
-        const improvement = (((originalDuration - fastDuration) / originalDuration) * 100).toFixed(1);
+        const improvement = (
+          ((originalDuration - fastDuration) / originalDuration) *
+          100
+        ).toFixed(1);
 
         let speedupColor = "green";
         if (speedup < 1) speedupColor = "red";
@@ -120,30 +135,40 @@ const compareResults = (fastResults, originalResults) => {
     console.log(comparisonTable);
 
     // Calculate overall statistics
-    const validComparisons = comparisons.slice(1).filter(row => {
-      const speedup = parseFloat(strip(row[4]).replace('x', ''));
+    const validComparisons = comparisons.slice(1).filter((row) => {
+      const speedup = parseFloat(strip(row[4]).replace("x", ""));
       return !isNaN(speedup);
     });
 
     if (validComparisons.length > 0) {
-      const speedups = validComparisons.map(row => parseFloat(strip(row[4]).replace('x', '')));
-      const avgSpeedup = (speedups.reduce((a, b) => a + b, 0) / speedups.length).toFixed(2);
+      const speedups = validComparisons.map((row) =>
+        parseFloat(strip(row[4]).replace("x", "")),
+      );
+      const avgSpeedup = (
+        speedups.reduce((a, b) => a + b, 0) / speedups.length
+      ).toFixed(2);
       const maxSpeedup = Math.max(...speedups).toFixed(2);
       const minSpeedup = Math.min(...speedups).toFixed(2);
 
       console.log("\n" + "=".repeat(40));
       console.log("📈 SUMMARY STATISTICS");
       console.log("=".repeat(40));
-      console.log(`Average Speedup: ${chalk.green(avgSpeedup + 'x')}`);
-      console.log(`Maximum Speedup: ${chalk.green(maxSpeedup + 'x')}`);
-      console.log(`Minimum Speedup: ${chalk.yellow(minSpeedup + 'x')}`);
+      console.log(`Average Speedup: ${chalk.green(avgSpeedup + "x")}`);
+      console.log(`Maximum Speedup: ${chalk.green(maxSpeedup + "x")}`);
+      console.log(`Minimum Speedup: ${chalk.yellow(minSpeedup + "x")}`);
       console.log(`Files Tested: ${validComparisons.length}`);
 
       if (parseFloat(avgSpeedup) > 1) {
-        console.log(`\n🚀 ${chalk.green.bold('RUST IMPLEMENTATION IS FASTER!')}`);
-        console.log(`🔥 On average, the Rust implementation is ${chalk.green.bold(avgSpeedup + 'x faster')} than the original!`);
+        console.log(
+          `\n🚀 ${chalk.green.bold("RUST IMPLEMENTATION IS FASTER!")}`,
+        );
+        console.log(
+          `🔥 On average, the Rust implementation is ${chalk.green.bold(avgSpeedup + "x faster")} than the original!`,
+        );
       } else {
-        console.log(`\n⚠️  ${chalk.yellow('Original implementation is faster on average')}`);
+        console.log(
+          `\n⚠️  ${chalk.yellow("Original implementation is faster on average")}`,
+        );
       }
     }
   }
@@ -151,13 +176,18 @@ const compareResults = (fastResults, originalResults) => {
 
 const run = async () => {
   console.log(chalk.bold("🏁 CSV Parser Performance Comparison"));
-  console.log("Comparing Rust implementation vs Original JavaScript csv-parser");
+  console.log(
+    "Comparing Rust implementation vs Original JavaScript csv-parser",
+  );
 
   // Run Fast CSV Parser (Rust)
   const fastResults = await runBenchmark(fastCsv, "Fast CSV Parser (Rust)");
 
   // Run Original CSV Parser (JavaScript)
-  const originalResults = await runBenchmark(originalCsv, "Original csv-parser (JavaScript)");
+  const originalResults = await runBenchmark(
+    originalCsv,
+    "Original csv-parser (JavaScript)",
+  );
 
   // Compare results
   compareResults(fastResults, originalResults);

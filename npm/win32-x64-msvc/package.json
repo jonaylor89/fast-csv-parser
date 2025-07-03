@@ -1,6 +1,6 @@
 {
   "name": "fast-csv-parser-win32-x64-msvc",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "repository": {
     "url": "https://github.com/jonaylor89/fast-csv-parser"
   },
